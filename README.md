@@ -30,7 +30,7 @@ A Python-based tool for scraping web novels and saving chapters into structured 
 ## Installation
 1. Clone this repository:
 	```bash
-	git clone https://github.com/your-username/webnovel-scraper.git
+	git clone https://github.com/fedyrahmatullah/webnovel-scraper.git
 	```
 2. Navigate to the project directory:
 	```bash
