@@ -12,7 +12,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 # =========================================
 def setup_driver():
     opts = Options()
-    opts.add_argument("--headless")
+    opts.add_argument("--headless=new")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_argument(
@@ -20,13 +20,12 @@ def setup_driver():
     )
 
     service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=opts)
-    return driver
+    return webdriver.Chrome(service=service, options=opts)
 
 
 def fetch_html(driver, url):
     driver.get(url)
-    time.sleep(1.2)
+    time.sleep(1)
     return driver.page_source
 
 
@@ -36,7 +35,7 @@ def fetch_html(driver, url):
 def get_chapter_list(driver, novel_url):
     print("Mengambil daftar chapter dari semua halaman...\n")
 
-    all_chapters = []
+    chapters = []
     page = 1
 
     while True:
@@ -46,21 +45,26 @@ def get_chapter_list(driver, novel_url):
         html = fetch_html(driver, url)
         soup = BeautifulSoup(html, "html.parser")
 
-        links = soup.select(".list-chapter li a")
+        items = soup.select(".list-chapter li a")
 
-        if not links:
-            print("\nPagination selesai.")
+        # ❗ Stop jika halaman tidak punya chapter
+        if len(items) == 0:
+            print("Tidak ada chapter di halaman ini. Stop pagination.")
             break
 
-        for a in links:
-            full = "https://novelfull.com" + a["href"]
-            all_chapters.append(full)
+        for a in items:
+            href = a.get("href")
+
+            if href.startswith("http"):
+                chapters.append(href)
+            else:
+                chapters.append("https://novelfull.com" + href)
 
         page += 1
-        time.sleep(0.8)
+        time.sleep(0.6)
 
-    print(f"\nTotal chapter ditemukan: {len(all_chapters)}\n")
-    return all_chapters
+    print(f"\nTotal chapter ditemukan: {len(chapters)}\n")
+    return chapters
 
 
 # =========================================
@@ -70,16 +74,21 @@ def fetch_chapter(driver, url):
     html = fetch_html(driver, url)
     soup = BeautifulSoup(html, "html.parser")
 
-    title = soup.select_one("span.chr-text").get_text(strip=True)
-    content = soup.select_one("#chapter-content")
+    title_el = soup.select_one("span.chr-text")
+    content_el = soup.select_one("#chapter-content")
 
-    return title, str(content)
+    title = title_el.get_text(strip=True) if title_el else "No Title"
+    content = str(content_el) if content_el else "<p>No content</p>"
+
+    return title, content
 
 
 # =========================================
 # BUILD EPUB
 # =========================================
 def build_epub(novel_title, chapters):
+    print("\nMembangun EPUB...")
+
     book = epub.EpubBook()
     book.set_identifier("novelfull-crawler")
     book.set_title(novel_title)
@@ -88,14 +97,14 @@ def build_epub(novel_title, chapters):
     epub_chapters = []
 
     for i, ch in enumerate(chapters):
-        c = epub.EpubHtml(
+        chapter = epub.EpubHtml(
             title=ch["title"],
-            file_name=f"chap_{i + 1}.xhtml",
+            file_name=f"chapter_{i+1}.xhtml",
             lang="en"
         )
-        c.content = f"<h2>{ch['title']}</h2>{ch['content']}"
-        book.add_item(c)
-        epub_chapters.append(c)
+        chapter.content = f"<h2>{ch['title']}</h2>{ch['content']}"
+        book.add_item(chapter)
+        epub_chapters.append(chapter)
 
     book.toc = tuple(epub_chapters)
     book.add_item(epub.EpubNcx())
@@ -104,6 +113,7 @@ def build_epub(novel_title, chapters):
 
     filename = f"{novel_title.replace(' ', '_')}.epub"
     epub.write_epub(filename, book)
+
     print(f"\n✨ EPUB berhasil dibuat: {filename}")
 
 
@@ -114,7 +124,7 @@ def main():
     driver = setup_driver()
     novel_url = "https://novelfull.com/i-might-be-a-fake-cultivator.html"
 
-    # Ambil semua chapter dari semua halaman
+    # Ambil semua chapter dari semua page
     chapter_urls = get_chapter_list(driver, novel_url)
 
     chapters = []
